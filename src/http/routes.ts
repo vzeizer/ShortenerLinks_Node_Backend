@@ -17,7 +17,7 @@ export async function appRoutes(app: FastifyInstance) {
    * GET /:code
    * Obtém a URL original e incrementa os acessos.
    */
-  app.get('/:code', async (request, reply) => {
+  app.get('/api/links/:code', async (request, reply) => {
     const getLinkSchema = z.object({
       code: z.string().min(3),
     });
@@ -49,14 +49,16 @@ export async function appRoutes(app: FastifyInstance) {
    * Rota de Criação de Link [cite: 11]
    * POST /links
    */
-  app.post('/links', async (request, reply) => {
+  app.post('/api/links', async (request, reply) => {
+    console.log('Request body:', request.body);
+
     const createLinkSchema = z.object({
-      originalUrl: z.string().url('URL original mal formatada.'),
+      original_url: z.string().url('URL original mal formatada.'),
       // O 'code' é opcional, se não vier, geramos um
       code: z.string().min(3).optional(),
     });
 
-    const { originalUrl, code: inputCode } = createLinkSchema.parse(request.body);
+    const { original_url: originalUrl, code: inputCode } = createLinkSchema.parse(request.body);
 
     // Gera um código de 6 caracteres se não for fornecido
     const code = inputCode || nanoid(6);
@@ -93,7 +95,7 @@ export async function appRoutes(app: FastifyInstance) {
    * GET /links
    * Inclui paginação para performance [cite: 27]
    */
-  app.get('/links', async (request, reply) => {
+  app.get('/api/links', async (request, reply) => {
     const getLinksSchema = z.object({
       page: z.coerce.number().min(1).default(1),
       pageSize: z.coerce.number().min(10).max(100).default(10),
@@ -117,35 +119,36 @@ export async function appRoutes(app: FastifyInstance) {
 
     return reply.send(allLinks);
   });
-  /**
-   * Rota para Deletar Link [cite: 14]
-   * DELETE /links/:id
-   * (Decisão de projeto: usar o ID, conforme sugerido [cite: 37])
-   */
-  app.delete('/links/:id', async (request, reply) => {
-    const deleteLinkSchema = z.object({
-      id: z.coerce.number().int().positive(),
-    });
-
-    const { id } = deleteLinkSchema.parse(request.params);
-
-    const [deletedLink] = await db
-      .delete(links)
-      .where(eq(links.id, id))
-      .returning({ id: links.id });
-
-    if (!deletedLink) {
-      return reply.status(404).send({ message: 'Link not found' });
-    }
-
-    return reply.status(204).send(); // 204 No Content
+/**
+ * Rota para Deletar Link por código
+ * DELETE /links/:code
+ * Usa o código em vez do ID para ser mais user-friendly
+ */
+app.delete('/api/links/:code', async (request, reply) => {
+  const deleteLinkSchema = z.object({
+    code: z.string().min(3),
   });
+  
+  console.log('Request params:', request.params);
+  const { code } = deleteLinkSchema.parse(request.params);
+
+  const [deletedLink] = await db
+    .delete(links)
+    .where(eq(links.code, code))
+    .returning({ id: links.id });
+
+  if (!deletedLink) {
+    return reply.status(404).send({ message: 'Link not found' });
+  }
+
+  return reply.status(204).send(); // 204 No Content
+});
 
   /**
    * Rota para Exportar CSV [cite: 21, 25, 26, 28]
    * POST /links/export/csv
    */
-  app.post('/links/export/csv', async (request, reply) => {
+  app.post('/api/links/export/csv', async (request, reply) => {
     try {
       const allLinks = await db.select().from(links).orderBy(desc(links.createdAt));
 
