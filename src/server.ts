@@ -19,6 +19,8 @@ app.setSerializerCompiler(serializerCompiler);
 // Habilita o CORS [cite: 60]
 app.register(cors, {
   origin: '*', // Em produção, restrinja isso!
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Adiciona os métodos permitidos
+  allowedHeaders: ['Content-Type', 'Authorization'], // Headers permitidos
 });
 
 // Registra todas as nossas rotas da API
