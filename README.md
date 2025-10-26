@@ -39,22 +39,25 @@ A modern URL shortener service built with Node.js, TypeScript, and PostgreSQL. T
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/links` | Create a new shortened URL |
-| `GET` | `/links` | List all links with pagination |
+| `POST` | `/api/links` | Create a new shortened URL |
+| `GET` | `/api/links` | List all links with pagination |
+| `GET` | `/api/links/:code` | Get link data without redirection |
+| `POST` | `/api/links/:code/visit` | Increment visit counter |
 | `GET` | `/:code` | Redirect to original URL (increments counter) |
-| `DELETE` | `/links/:id` | Delete a specific link |
-| `POST` | `/links/export/csv` | Export all links to CSV |
+| `DELETE` | `/api/links/:code` | Delete a specific link by code |
+| `POST` | `/api/links/export/csv` | Export all links to CSV |
 
 ### Request/Response Examples
 
 #### Create Short URL
 ```bash
-POST /links
+POST /api/links
 Content-Type: application/json
 
 {
-  "originalUrl": "https://example.com/very-long-url",
-  "code": "custom123" // optional
+  "original_url": "https://example.com/very-long-url",
+  "code": "custom123", // optional
+  "custom_name": "my-link" // optional, takes priority over code
 }
 ```
 
@@ -62,13 +65,14 @@ Response:
 ```json
 {
   "id": 1,
+  "code": "custom123",
   "shortUrl": "https://your-domain.com/custom123"
 }
 ```
 
 #### List Links
 ```bash
-GET /links?page=1&pageSize=10
+GET /api/links?page=1&pageSize=10
 ```
 
 Response:
@@ -77,12 +81,60 @@ Response:
   {
     "id": 1,
     "code": "custom123",
-    "originalUrl": "https://example.com/very-long-url",
-    "accessCount": 42,
-    "createdAt": "2024-01-15T10:30:00.000Z",
-    "shortUrl": "https://your-domain.com/custom123"
+    "original_url": "https://example.com/very-long-url",
+    "access_count": 42,
+    "created_at": "2024-01-15T10:30:00.000Z",
+    "short_url": "https://your-domain.com/custom123"
   }
 ]
+```
+
+#### Get Link Data
+```bash
+GET /api/links/custom123
+```
+
+Response:
+```json
+{
+  "id": 1,
+  "code": "custom123",
+  "original_url": "https://example.com/very-long-url",
+  "access_count": 42,
+  "created_at": "2024-01-15T10:30:00.000Z",
+  "short_url": "https://your-domain.com/custom123"
+}
+```
+
+#### Increment Visit Counter
+```bash
+POST /api/links/custom123/visit
+```
+
+Response:
+```json
+{
+  "success": true
+}
+```
+
+#### Delete Link
+```bash
+DELETE /api/links/custom123
+```
+
+Response: `204 No Content`
+
+#### Export CSV
+```bash
+POST /api/links/export/csv
+```
+
+Response:
+```json
+{
+  "csvUrl": "https://your-domain.com/random-uuid.csv"
+}
 ```
 
 ## 🚦 Getting Started
@@ -202,21 +254,37 @@ src/
 - Uses [`nanoid`](https://github.com/ai/nanoid) for generating unique 6-character codes
 - Supports custom codes with uniqueness validation
 - Handles collision detection and error handling
+- Custom names take priority over codes when provided
 
 ### Analytics & Tracking
-- Automatic access counting on each redirect
+- Automatic access counting on each redirect via `GET /:code`
+- Manual visit tracking via `POST /api/links/:code/visit`
 - Database-level increment operations for accuracy
 - Timestamped creation tracking
 
 ### CSV Export
-- Generates comprehensive CSV reports
+- Generates comprehensive CSV reports with headers
 - Uploads to Cloudflare R2 for reliable access
 - Includes all link metadata and statistics
+- Returns public URL for immediate download
 
 ### Performance Optimizations
 - Efficient pagination with `LIMIT` and `OFFSET`
 - Database indexing on frequently queried fields
 - Structured logging for monitoring
+- CORS enabled for cross-origin requests
+
+## 🔄 API Behavior Notes
+
+### Redirection vs Data Retrieval
+- `GET /:code` - Direct redirection with counter increment (for browser navigation)
+- `GET /api/links/:code` - Returns JSON data without redirection (for API consumption)
+- `POST /api/links/:code/visit` - Manual counter increment (for tracking without redirection)
+
+### Error Handling
+- Returns appropriate HTTP status codes (404, 400, 500)
+- Handles PostgreSQL constraint violations (duplicate codes)
+- Validates input with Zod schemas
 
 ## 🤝 Contributing
 
