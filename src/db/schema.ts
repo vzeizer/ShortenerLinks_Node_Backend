@@ -8,11 +8,11 @@ export const links = pgTable('links', {
   code: varchar('code', { length: 10 }).unique().notNull(),
 
   // A URL original 
-  originalUrl: text('original_url').notNull(),
+  original_url: text('original_url').notNull(),
   
   // Data de criação 
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  created_at: timestamp('created_at').defaultNow().notNull(),
 
   // Contagem de acessos 
-  accessCount: integer('access_count').default(0).notNull(),
+  access_count: integer('access_count').default(0).notNull(),
 });
