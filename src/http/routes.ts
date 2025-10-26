@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db';
 import { links } from '../db/schema';
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, desc, sql, or } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { PostgresError } from 'postgres';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
@@ -13,9 +13,41 @@ import { env } from '../env';
 export async function appRoutes(app: FastifyInstance) {
 
   /**
-   * Rota de Redirecionamento e Incremento [cite: 15, 17]
+   * Rota de Redirecionamento Direto (para navegação)
    * GET /:code
-   * Obtém a URL original e incrementa os acessos.
+   * Redireciona diretamente para a URL original
+   */
+  app.get('/:code', async (request, reply) => {
+    const getLinkSchema = z.object({
+      code: z.string().min(3),
+    });
+
+    const { code } = getLinkSchema.parse(request.params);
+
+    const link = await db.query.links.findFirst({
+      where: eq(links.code, code),
+    });
+
+    if (!link) {
+      return reply.status(404).send({ message: 'Link not found' });
+    }
+
+    // Incrementa o contador de acessos
+    await db
+      .update(links)
+      .set({
+        access_count: sql`${links.access_count} + 1`,
+      })
+      .where(eq(links.id, link.id));
+
+    // Redireciona para a URL original
+    return reply.redirect(link.original_url, 301);
+  });
+
+  /**
+   * Rota da API para obter dados do link (sem redirect)
+   * GET /api/links/:code
+   * Retorna os dados do link em JSON
    */
   app.get('/api/links/:code', async (request, reply) => {
     const getLinkSchema = z.object({
@@ -32,63 +64,98 @@ export async function appRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: 'Link not found' });
     }
 
-    // Incrementa o contador de acessos [cite: 17]
-    // Usamos sql`...` para fazer a operação no próprio banco
-    await db
-      .update(links)
-      .set({
-        accessCount: sql`${links.accessCount} + 1`,
-      })
-      .where(eq(links.id, link.id));
-
-    // Redireciona para a URL original
-    return reply.redirect(link.originalUrl, 301);
+    // Retorna apenas os dados, sem incrementar contador nem redirecionar
+    return reply.send({
+      id: link.id,
+      code: link.code,
+      original_url: link.original_url,
+      access_count: link.access_count,
+      created_at: link.created_at,
+      short_url: `${env.CLOUDFLARE_PUBLIC_URL}/${link.code}`,
+    });
   });
+
+/**
+ * Rota para incrementar contador de visitas
+ * POST /api/links/:code/visit
+ */
+app.post('/api/links/:code/visit', async (request, reply) => {
+  const visitLinkSchema = z.object({
+    code: z.string().min(3),
+  });
+
+  const { code } = visitLinkSchema.parse(request.params);
+
+  // Search by both code AND custom_name (this is important!)
+  const link = await db.query.links.findFirst({
+    where: or(
+      eq(links.code, code),
+      // eq(links.custom_name, code) // Also search by custom_name
+    ),
+  });
+
+  if (!link) {
+    return reply.status(404).send({ message: 'Link not found' });
+  }
+
+  // Incrementa o contador de acessos
+  await db
+    .update(links)
+    .set({
+      access_count: sql`${links.access_count} + 1`,
+    })
+    .where(eq(links.id, link.id));
+
+  return reply.status(200).send({ success: true });
+});
 
   /**
-   * Rota de Criação de Link [cite: 11]
-   * POST /links
-   */
-  app.post('/api/links', async (request, reply) => {
-    console.log('Request body:', request.body);
+ * Rota de Criação de Link [cite: 11]
+ * POST /links
+ */
+app.post('/api/links', async (request, reply) => {
+  console.log('Request body:', request.body);
 
-    const createLinkSchema = z.object({
-      original_url: z.string().url('URL original mal formatada.'),
-      // O 'code' é opcional, se não vier, geramos um
-      code: z.string().min(3).optional(),
-    });
-
-    const { original_url: originalUrl, code: inputCode } = createLinkSchema.parse(request.body);
-
-    // Gera um código de 6 caracteres se não for fornecido
-    const code = inputCode || nanoid(6);
-
-    try {
-      const [newLink] = await db
-        .insert(links)
-        .values({
-          originalUrl,
-          code,
-        })
-        .returning({
-          id: links.id,
-          shortUrl: sql<string>`concat(${env.CLOUDFLARE_PUBLIC_URL}::text, '/', ${links.code})`,
-        });
-
-      return reply.status(201).send(newLink);
-
-    } catch (error) {
-      // Trata erro de violação de constraint (código duplicado) [cite: 13]
-      if (error instanceof PostgresError && error.code === '23505') {
-        return reply.status(400).send({
-          message: 'URL encurtada já existente.',
-        });
-      }
-      
-      console.error(error);
-      return reply.status(500).send({ message: 'Internal server error.' });
-    }
+  const createLinkSchema = z.object({
+    original_url: z.string().url('URL original mal formatada.'),
+    // O 'code' é opcional, se não vier, geramos um
+    code: z.string().min(3).optional(),
+    // Novo campo para nome customizado
+    custom_name: z.string().min(3).optional(),
   });
+
+  const { original_url, code: inputCode, custom_name } = createLinkSchema.parse(request.body);
+
+  // Prioriza custom_name sobre code, depois gera um aleatório
+  const code = custom_name || inputCode || nanoid(6);
+
+  try {
+    const [newLink] = await db
+      .insert(links)
+      .values({
+        original_url,
+        code,
+      })
+      .returning({
+        id: links.id,
+        code: links.code,
+        shortUrl: sql<string>`concat(${env.CLOUDFLARE_PUBLIC_URL}::text, '/', ${links.code})`,
+      });
+
+    return reply.status(201).send(newLink);
+
+  } catch (error) {
+    // Trata erro de violação de constraint (código duplicado) [cite: 13]
+    if (error instanceof PostgresError && error.code === '23505') {
+      return reply.status(400).send({
+        message: 'URL encurtada já existente.',
+      });
+    }
+    
+    console.error(error);
+    return reply.status(500).send({ message: 'Internal server error.' });
+  }
+});
 
   /**
    * Rota de Listagem de Links [cite: 16]
@@ -107,13 +174,13 @@ export async function appRoutes(app: FastifyInstance) {
       .select({
         id: links.id,
         code: links.code,
-        originalUrl: links.originalUrl,
-        accessCount: links.accessCount,
-        createdAt: links.createdAt,
-        shortUrl: sql<string>`concat(${env.CLOUDFLARE_PUBLIC_URL}::text, '/', ${links.code})`,
+        original_url: links.original_url,
+        access_count: links.access_count,
+        created_at: links.created_at,
+        short_url: sql<string>`concat(${env.CLOUDFLARE_PUBLIC_URL}::text, '/', ${links.code})`,
       })
       .from(links)
-      .orderBy(desc(links.createdAt)) // Mais recentes primeiro
+      .orderBy(desc(links.created_at)) // Mais recentes primeiro
       .limit(pageSize)
       .offset((page - 1) * pageSize);
 
@@ -150,7 +217,7 @@ app.delete('/api/links/:code', async (request, reply) => {
    */
   app.post('/api/links/export/csv', async (request, reply) => {
     try {
-      const allLinks = await db.select().from(links).orderBy(desc(links.createdAt));
+      const allLinks = await db.select().from(links).orderBy(desc(links.created_at));
 
       if (allLinks.length === 0) {
         return reply.status(400).send({ message: 'No links to export' });
@@ -160,7 +227,7 @@ app.delete('/api/links/:code', async (request, reply) => {
       const csvHeader = 'URL original,URL encurtada,Contagem de acessos,Data de criação\n';
       const csvBody = allLinks.map(link => {
         const shortUrl = `${env.CLOUDFLARE_PUBLIC_URL}/${link.code}`;
-        return `${link.originalUrl},${shortUrl},${link.accessCount},${link.createdAt.toISOString()}`;
+        return `${link.original_url},${shortUrl},${link.access_count},${link.created_at.toISOString()}`;
       }).join('\n');
 
       const csvContent = csvHeader + csvBody;
