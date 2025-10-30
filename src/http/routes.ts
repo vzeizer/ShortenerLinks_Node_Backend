@@ -126,8 +126,11 @@ app.post('/api/links', async (request, reply) => {
 
   const { original_url, code: inputCode, custom_name } = createLinkSchema.parse(request.body);
 
+  // remove brev.ly/ from custom_name
+  const cleanedCustomName = custom_name?.replace('brev.ly/', '');
+
   // Prioriza custom_name sobre code, depois gera um aleatório
-  const code = custom_name || inputCode || nanoid(6);
+  const code = cleanedCustomName || inputCode || nanoid(6);
 
   try {
     const [newLink] = await db
