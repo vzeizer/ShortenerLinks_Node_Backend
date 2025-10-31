@@ -4,19 +4,18 @@ A modern URL shortener service built with Node.js, TypeScript, and PostgreSQL. T
 
 # Funcionalidades e Regras
 
-- [ ]  Deve ser possível criar um link
-    - [ ]  Não deve ser possível criar um link com URL encurtada mal formatada
-    - [ ]  Não deve ser possível criar um link com URL encurtada já existente
-- [ ]  Deve ser possível deletar um link
-- [ ]  Deve ser possível obter a URL original por meio de uma URL encurtada
-- [ ]  Deve ser possível listar todas as URL’s cadastradas
-- [ ]  Deve ser possível incrementar a quantidade de acessos de um link
-- [ ]  Deve ser possível exportar os links criados em um CSV
-    - [ ]  Deve ser possível acessar o CSV por meio de uma CDN (Amazon S3, Cloudflare R2, etc)
-    - [ ]  Deve ser gerado um nome aleatório e único para o arquivo
-    - [ ]  Deve ser possível realizar a listagem de forma performática
-    - [ ]  O CSV deve ter campos como, URL original, URL encurtada, contagem de acessos e data de criação.
-
+- [x]  Deve ser possível criar um link
+    - [x]  Não deve ser possível criar um link com URL encurtada mal formatada
+    - [x]  Não deve ser possível criar um link com URL encurtada já existente
+- [x]  Deve ser possível deletar um link
+- [x]  Deve ser possível obter a URL original por meio de uma URL encurtada
+- [x]  Deve ser possível listar todas as URL's cadastradas
+- [x]  Deve ser possível incrementar a quantidade de acessos de um link
+- [x]  Deve ser possível exportar os links criados em um CSV
+    - [x]  Deve ser possível acessar o CSV por meio de uma CDN (Amazon S3, Cloudflare R2, etc)
+    - [x]  Deve ser gerado um nome aleatório e único para o arquivo
+    - [x]  Deve ser possível realizar a listagem de forma performática
+    - [x]  O CSV deve ter campos como, URL original, URL encurtada, contagem de acessos e data de criação.
 
 ## 🚀 Features
 
@@ -270,24 +269,25 @@ src/
 - Uses [`nanoid`](https://github.com/ai/nanoid) for generating unique 6-character codes
 - Supports custom codes with uniqueness validation
 - Handles collision detection and error handling
-- Custom names take priority over codes when provided
+- Custom names take priority over codes when provided (strips `brev.ly/` prefix if present)
 
 ### Analytics & Tracking
 - Automatic access counting on each redirect via `GET /:code`
 - Manual visit tracking via `POST /api/links/:code/visit`
-- Database-level increment operations for accuracy
+- Database-level increment operations for accuracy using SQL expressions
 - Timestamped creation tracking
 
 ### CSV Export
-- Generates comprehensive CSV reports with headers
+- Generates comprehensive CSV reports with proper headers
 - Uploads to Cloudflare R2 for reliable access
-- Includes all link metadata and statistics
+- Includes all link metadata: original URL, short URL, access count, and creation date
 - Returns public URL for immediate download
+- Uses UUID for unique file naming
 
 ### Performance Optimizations
 - Efficient pagination with `LIMIT` and `OFFSET`
 - Database indexing on frequently queried fields
-- Structured logging for monitoring
+- Structured logging for monitoring with Pino
 - CORS enabled for cross-origin requests
 
 ## 🔄 API Behavior Notes
@@ -299,8 +299,14 @@ src/
 
 ### Error Handling
 - Returns appropriate HTTP status codes (404, 400, 500)
-- Handles PostgreSQL constraint violations (duplicate codes)
+- Handles PostgreSQL constraint violations (duplicate codes) with code 23505
 - Validates input with Zod schemas
+- Comprehensive error messages for debugging
+
+### Input Processing
+- Custom names automatically strip `brev.ly/` prefix for user convenience
+- Code generation defaults to 6-character nanoid if no custom code provided
+- URLs validated as proper URLs using Zod schema validation
 
 ## 🤝 Contributing
 
